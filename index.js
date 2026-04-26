@@ -4,58 +4,70 @@ const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔥 Cache simple
 let cache = null;
 let lastFetch = 0;
 
 async function obtenerRango() {
-  const now = Date.now();
+  try {
+    const now = Date.now();
 
-  // ⏱️ Cache por 10 segundos
-  if (cache && now - lastFetch < 10000) {
-    console.log("Usando cache");
+    if (cache && now - lastFetch < 10000) {
+      console.log("Usando cache");
+      return cache;
+    }
+
+    console.log("Consultando API...");
+
+    const response = await axios.get(
+      "https://api.henrikdev.xyz/valorant/v1/mmr/eu/macarrones/pato"
+    );
+
+    if (!response.data || !response.data.data) {
+      throw new Error("Respuesta inválida de la API");
+    }
+
+    cache = {
+      rango: response.data.data.currenttierpatched,
+      rr: response.data.data.ranking_in_tier,
+    };
+
+    lastFetch = now;
+
     return cache;
+
+  } catch (error) {
+    console.error("ERROR EN API:", error.response?.data || error.message);
+
+    // 🔥 fallback: devolver cache si existe
+    if (cache) {
+      return cache;
+    }
+
+    throw error;
   }
-
-  console.log("Consultando API...");
-
-  const response = await axios.get(
-    "https://api.henrikdev.xyz/valorant/v1/mmr/eu/macarrones/pato"
-  );
-
-  cache = {
-    rango: response.data.data.currenttierpatched,
-    rr: response.data.data.ranking_in_tier,
-  };
-
-  lastFetch = now;
-
-  return cache;
 }
 
-// 🏠 Ruta principal
+// ruta base
 app.get("/", (req, res) => {
-  res.send("API activa 🚀 Usa /rango o /rank");
+  res.send("API activa 🚀");
 });
 
-// 🇪🇸 Español
+// español
 app.get("/rango", async (req, res) => {
   try {
     const { rango, rr } = await obtenerRango();
     res.send(`El rango de Sofi es: ${rango} (${rr} RR)`);
-  } catch (error) {
-    console.error("ERROR /rango:", error.response?.data || error.message);
+  } catch {
     res.send("No se pudo obtener el rango en este momento.");
   }
 });
 
-// 🇬🇧 English
+// inglés
 app.get("/rank", async (req, res) => {
   try {
     const { rango, rr } = await obtenerRango();
     res.send(`Sofi's current rank is: ${rango} (${rr} RR)`);
-  } catch (error) {
-    console.error("ERROR /rank:", error.response?.data || error.message);
+  } catch {
     res.send("Could not retrieve the rank right now.");
   }
 });
