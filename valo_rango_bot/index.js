@@ -6,24 +6,14 @@ const db = require("./src/db");
 const { crearApp } = require("./src/server");
 
 function validarConfig() {
-  const faltan = [];
-  if (!config.databaseUrl) faltan.push("DATABASE_URL");
-  if (!config.encryptionKey) faltan.push("ENCRYPTION_KEY");
-  if (!config.sessionSecret) faltan.push("SESSION_SECRET");
-  if (!config.twitch.clientId) faltan.push("TWITCH_CLIENT_ID");
-  if (!config.twitch.clientSecret) faltan.push("TWITCH_CLIENT_SECRET");
-
-  if (faltan.length) {
-    console.error(`[ERROR] Faltan variables de entorno obligatorias: ${faltan.join(", ")}`);
+  if (config.faltantes.length) {
+    console.error(`[ERROR] Variables de entorno obligatorias ausentes: ${config.faltantes.join(", ")}`);
+    console.error("        El servicio arranca en modo degradado: no se podran guardar configuraciones.");
     console.error("        Copia .env.example a .env (local) o defines las variables en Render.");
-    process.exit(1);
   }
-
-  if (config.encryptionKey.length < 16) {
+  if (config.encryptionKey && !config.encryptionKeyValida) {
     console.error("[ERROR] ENCRYPTION_KEY es demasiado corta: usa al menos 16 caracteres aleatorios.");
-    process.exit(1);
   }
-
   if (!config.baseUrlEsFijo) {
     console.warn("[WARN] BASE_URL no esta definida: se usara el host de cada peticion.");
   }
@@ -32,9 +22,18 @@ function validarConfig() {
 async function arrancar() {
   validarConfig();
 
-  db.init(config);
-  await db.preparar();
-  logger.info("base de datos lista", { url: config.databaseUrl.replace(/:[^:@/]*@/, ":****@") });
+  if (config.databaseUrl) {
+    try {
+      db.init(config);
+      await db.preparar();
+      logger.info("base de datos lista", { url: config.databaseUrl.replace(/:[^:@/]*@/, ":****@") });
+    } catch (error) {
+      logger.error("no se pudo preparar la base de datos", error.message);
+      await db.cerrar();
+    }
+  } else {
+    logger.error("sin DATABASE_URL: el servicio arranca sin persistencia");
+  }
 
   const app = crearApp(config);
   const servidor = app.listen(config.puerto, "0.0.0.0", () => {

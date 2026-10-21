@@ -4,6 +4,7 @@ const http = require("http");
 const assert = require("assert");
 
 const PUERTO_APP = 3998;
+const PUERTO_DEGRADADO = 3997;
 const PUERTO_PROVEEDOR = 3999;
 const BASE = `http://127.0.0.1:${PUERTO_APP}`;
 const KEY_PRUEBA = "key-de-prueba-1234567890";
@@ -238,6 +239,35 @@ async function principal() {
     const jsonSalud = await salud.json();
     comprobar("health responde ok", jsonSalud.ok === true);
     comprobar("health no filtra secretos", !JSON.stringify(jsonSalud).includes(KEY_PRUEBA));
+
+    console.log("\n8. Modo degradado (servidor sin configuracion completa)");
+    const configDegradada = Object.assign({}, config, {
+      sessionSecret: "",
+      degradado: true,
+      faltantes: ["DATABASE_URL", "TWITCH_CLIENT_ID"],
+    });
+    const appDegradada = crearApp(configDegradada);
+    const servidorDegradado = appDegradada.listen(PUERTO_DEGRADADO, "127.0.0.1");
+    try {
+      const baseDegradada = `http://127.0.0.1:${PUERTO_DEGRADADO}`;
+      const saludDegradada = await fetch(`${baseDegradada}/health`);
+      const jsonDegradado = await saludDegradada.json();
+      comprobar("health responde 200 aun degradado", saludDegradada.status === 200);
+      comprobar("health avisa del modo degradado", jsonDegradado.degradado === true);
+      comprobar("health lista las variables que faltan", (jsonDegradado.faltantes || []).includes("DATABASE_URL"));
+
+      const paginaDegradada = await fetch(`${baseDegradada}/setup`);
+      const htmlDegradado = await paginaDegradada.text();
+      comprobar("la pagina avisa del modo degradado", htmlDegradado.includes("modo degradado"));
+      comprobar("la pagina no filtra secretos", !htmlDegradado.includes(KEY_PRUEBA));
+
+      const rangoDegradado = await fetch(`${baseDegradada}/rank?token=cualquiera`);
+      const textoDegradado = await rangoDegradado.text();
+      comprobar("rank responde 200 en modo degradado", rangoDegradado.status === 200);
+      comprobar("rank devuelve un mensaje legible", textoDegradado.length > 0 && textoDegradado.length < 400, textoDegradado);
+    } finally {
+      servidorDegradado.close();
+    }
   } finally {
     servidor.close();
     servidorProveedor.close();

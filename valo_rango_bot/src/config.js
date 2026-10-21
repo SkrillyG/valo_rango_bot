@@ -64,5 +64,14 @@ const config = {
 };
 
 config.produccion = config.nodeEnv === "production";
+config.encryptionKeyValida = config.encryptionKey.length >= 16;
+
+config.faltantes = [];
+if (!config.databaseUrl) config.faltantes.push("DATABASE_URL");
+if (!config.encryptionKeyValida) config.faltantes.push("ENCRYPTION_KEY");
+if (!config.sessionSecret) config.faltantes.push("SESSION_SECRET");
+if (!config.twitch.clientId) config.faltantes.push("TWITCH_CLIENT_ID");
+if (!config.twitch.clientSecret) config.faltantes.push("TWITCH_CLIENT_SECRET");
+config.degradado = config.faltantes.length > 0;
 
 module.exports = config;

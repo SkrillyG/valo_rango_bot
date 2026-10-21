@@ -75,10 +75,17 @@ ${cuerpo}
 </html>`;
 }
 
-function inicio({ baseUrl }) {
+function avisoDegradado(faltantes) {
+  if (!faltantes || !faltantes.length) return "";
+  const lista = faltantes.map((v) => `<code>${escapar(v)}</code>`).join(", ");
+  return `<div class="alert warn"><strong>El servicio esta en modo degradado.</strong> Faltan estas variables de entorno en el servidor: ${lista}. Hasta que se anaden no se pueden guardar configuraciones ni iniciar sesion con Twitch.</div>`;
+}
+
+function inicio({ baseUrl, faltantes }) {
   return layout({
     titulo: "Inicio",
     cuerpo: `
+${avisoDegradado(faltantes)}
 <p class="sub">Rangos de Valorant para el chat de Twitch, con tu propia key y tu propio comando.</p>
 <div class="card">
   <h2>Como usarlo</h2>
@@ -123,11 +130,12 @@ function bloqueComando(titulo, texto, copiable = true) {
   </div>`;
 }
 
-function paginaSetup({ baseUrl, streamer, configurado, token, error, aviso, comandos, comandosEnmascarados }) {
+function paginaSetup({ baseUrl, streamer, configurado, token, error, aviso, comandos, comandosEnmascarados, faltantes }) {
   const cuerpo = [];
 
   if (error) cuerpo.push(`<div class="alert err">${escapar(error)}</div>`);
   if (aviso) cuerpo.push(`<div class="alert warn">${escapar(aviso)}</div>`);
+  cuerpo.push(avisoDegradado(faltantes));
 
   if (!streamer) {
     cuerpo.push(`
@@ -234,11 +242,4 @@ function copiar(id){
   return layout({ titulo: "Configuracion", cuerpo: cuerpo.join("\n") });
 }
 
-function paginaSimple(titulo, mensaje) {
-  return layout({
-    titulo,
-    cuerpo: `<div class="card"><h2>${escapar(titulo)}</h2><p class="small">${escapar(mensaje)}</p><p><a class="btn sec" href="/setup">Volver a la configuracion</a></p></div>`,
-  });
-}
-
-module.exports = { escapar, layout, inicio, paginaSetup, paginaSimple };
+module.exports = { escapar, layout, inicio, paginaSetup };

@@ -270,6 +270,22 @@ cacheado, se sirve el valor viejo antes que un error en pantalla.
 - **Render no ejecuta cron jobs.** Si necesitas tareas periodicas, usa un Worker aparte; este
   servicio solo expone HTTP.
 
+### 7.7 Si el deploy falla
+
+| Sintoma en los logs de Render | Causa | Solucion |
+|---|---|---|
+| `npm ci can only install packages when your package.json and package-lock.json ... are in sync` | El `package-lock.json` no coincide con `package.json` | Regenerar el lock: `npm install --package-lock-only` y subirlo |
+| `npm ERR! code ENOENT ... package.json` | El **Root Directory** no apunta a `valo_rango_bot` | Corregir *Root Directory* y hacer **Manual Deploy** |
+| `[ERROR] Variables de entorno obligatorias ausentes: ...` | Faltan variables en *Environment* | Completar la tabla del punto 7.4 |
+| `no se pudo preparar la base de datos` | `DATABASE_URL` incorrecta o Postgres no enlazado | Enlazar el Postgres y copiar su *Internal Database URL* |
+| `ENCRYPTION_KEY es demasiado corta` | La clave de cifrado tiene menos de 16 caracteres | `openssl rand -base64 32` |
+
+**Modo degradado.** Si falta alguna variable, el servicio **no se cae**: arranca igual, responde
+`200` en `/health` con `"degradado": true` y la lista de variables que faltan, muestra un aviso en
+la portada y en `/setup`, y `/rank` devuelve un mensaje legible en vez de un error 500. Asi un
+despliegue nunca se queda "failed" por un ajuste de entorno: se ve que falta algo y se arregla
+sin downtime.
+
 ## 8. Seguridad
 
 - Las **API keys se cifran** (AES-256-GCM) antes de tocar la base de datos. La clave de cifrado
@@ -296,9 +312,10 @@ curl -s "https://<TU-DOMINIO>/api/rank?token=<TOKEN>"
 curl -s https://<TU-DOMINIO>/setup
 ```
 
-`/health` devuelve `ok`, `uptimeSeg`, `twitchConfigurado` y responde `503` si la base de datos no
-responde. En los logs de Render cada peticion deja una linea con ruta, duracion y origen del dato
-(`cache`, `v3`, `v1`, `stale`):
+`/health` devuelve `ok`, `baseDeDatos`, `degradado`, `faltantes`, `uptimeSeg` y
+`twitchConfigurado`, y responde siempre `200` (para que Render lo use como health check sin
+marcar el deploy como fallido). En los logs de Render cada peticion deja una linea con ruta,
+duracion y origen del dato (`cache`, `v3`, `v1`, `stale`):
 
 ```
 [2026-10-21T18:40:11.204Z] INFO GET /rank -> 200 { ms: 512, origen: 'v3' }

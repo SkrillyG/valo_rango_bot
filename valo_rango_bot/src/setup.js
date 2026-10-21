@@ -37,7 +37,7 @@ function crearRouter(config) {
   router.get("/setup", async (req, res) => {
     const usuario = req.session.twitch;
     const error = req.session.flashError;
-    const aviso = req.session.flashAviso;
+    let aviso = req.session.flashAviso;
     delete req.session.flashError;
     delete req.session.flashAviso;
 
@@ -57,7 +57,7 @@ function crearRouter(config) {
         fila = await db.porTwitchId(usuario.id);
       } catch (errorDb) {
         logger.error("no se pudo leer la configuracion", errorDb.message);
-        return res.status(503).type("html").send(views.paginaSimple("Servicio no disponible", "No se pudo contactar con la base de datos."));
+        aviso = aviso || "No se pudo contactar con la base de datos: el servidor no puede guardar nada todavia.";
       }
     }
 
@@ -86,6 +86,7 @@ function crearRouter(config) {
         aviso,
         comandos: token ? construirComandos(base, token) : comandosEnmascarados(base),
         comandosEnmascarados: comandosEnmascarados(base),
+        faltantes: config.faltantes,
       })
     );
   });
@@ -104,6 +105,11 @@ function crearRouter(config) {
     const platform = PLATAFORMAS.includes(cuerpo.platform) ? cuerpo.platform : "pc";
     const lang = IDIOMAS.includes(cuerpo.lang) ? cuerpo.lang : "es";
     const apiKey = String(cuerpo.api_key || "").trim();
+
+    if (!config.encryptionKeyValida) {
+      req.session.flashError = "El servidor no tiene una ENCRYPTION_KEY valida: no se pueden guardar keys.";
+      return res.redirect("/setup");
+    }
 
     if (!riotName || !riotTag) {
       req.session.flashError = "Escribe tu Riot ID: nombre y tag.";
@@ -125,7 +131,13 @@ function crearRouter(config) {
         req.session.flashError = "La key del proveedor no parece valida.";
         return res.redirect("/setup");
       }
-      apiKeyCifrada = crypto.cifrar(apiKey, config.encryptionKey);
+      try {
+        apiKeyCifrada = crypto.cifrar(apiKey, config.encryptionKey);
+      } catch (errorCifrado) {
+        logger.error("no se pudo cifrar la key del proveedor", errorCifrado.message);
+        req.session.flashError = "El servidor no pudo cifrar tu key: revisa su configuracion.";
+        return res.redirect("/setup");
+      }
     }
 
     if (!apiKeyCifrada) {
@@ -167,6 +179,11 @@ function crearRouter(config) {
     const usuario = req.session.twitch;
     if (!usuario) {
       req.session.flashError = "Inicia sesion con Twitch antes de continuar.";
+      return res.redirect("/setup");
+    }
+
+    if (!config.encryptionKeyValida) {
+      req.session.flashError = "El servidor no tiene una ENCRYPTION_KEY valida: no se puede regenerar el token.";
       return res.redirect("/setup");
     }
 

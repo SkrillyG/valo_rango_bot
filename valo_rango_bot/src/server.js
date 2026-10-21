@@ -8,6 +8,7 @@ const views = require("./views");
 const auth = require("./auth");
 const setup = require("./setup");
 const rank = require("./rank");
+const crypto = require("./crypto");
 const { Ventana } = require("./ratelimit");
 const { baseUrl } = require("./urls");
 
@@ -16,12 +17,14 @@ function crearApp(config) {
   app.disable("x-powered-by");
   app.set("trust proxy", true);
 
+  const claveSesion = config.sessionSecret || crypto.aleatorio(32);
+
   app.use(express.urlencoded({ extended: false, limit: "16kb" }));
 
   app.use(
     cookieSession({
       name: "vr.sesion",
-      keys: [config.sessionSecret],
+      keys: [claveSesion],
       maxAge: config.sesionMaxAgeMs,
       httpOnly: true,
       sameSite: "lax",
@@ -43,7 +46,9 @@ function crearApp(config) {
   });
 
   app.get("/", (req, res) => {
-    res.type("html").send(views.inicio({ baseUrl: baseUrl(config, req) }));
+    res.type("html").send(
+      views.inicio({ baseUrl: baseUrl(config, req), faltantes: config.faltantes })
+    );
   });
 
   app.get("/health", async (req, res) => {
@@ -54,8 +59,11 @@ function crearApp(config) {
     } catch (error) {
       logger.error("health: base de datos no disponible", error.message);
     }
-    res.status(baseDeDatos ? 200 : 503).json({
-      ok: baseDeDatos,
+    res.status(200).json({
+      ok: baseDeDatos && !config.degradado,
+      baseDeDatos,
+      degradado: config.degradado,
+      faltantes: config.faltantes,
       servicio: "valo-rango-bot",
       uptimeSeg: Math.round(process.uptime()),
       twitchConfigurado: Boolean(config.twitch.clientId && config.twitch.clientSecret),
