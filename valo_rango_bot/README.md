@@ -123,12 +123,19 @@ recibir una peticion tarda **10-12 segundos** en despertar, y el proxy de Stream
 un timeout de 15 segundos: por eso el primer comando tras una pausa fallaba mientras el
 siguiente funcionaba.
 
-Hay dos capas de proteccion:
+Hay tres capas de proteccion, de mas a menos fiable:
 
-1. **UptimeRobot** (gratis, 5 minutos): monitor HTTP contra `https://valo-rango-bot.onrender.com/health`.
-2. **GitHub Actions** (`.github/workflows/keepalive.yml`): cron cada 7 minutos contra la misma ruta.
+1. **Health Check Path de Render** = `/health`. Render sondea su propia instancia mientras
+   esta viva, asi que es la capa que no depende de terceros.
+2. **UptimeRobot** (gratis, 5 minutos): monitor HTTP contra `https://valo-rango-bot.onrender.com/health`.
+   Es la opcion externa mas fiable y la que se recomienda.
+3. **GitHub Actions** (`.github/workflows/keepalive.yml`): cron cada 7 minutos contra la misma
+   ruta. OJO: en este repositorio el workflow aparece registrado como `active` pero **GitHub no
+   lo ejecuta** (0 ejecuciones tras 15 minutos). Si no es una limitacion de la cuenta,
+   hay que activar *Settings -> Actions -> General -> Enable Actions* o desactivar
+   *Disable scheduled workflows*. Verificar siempre en la pestana *Actions*.
 
-Con cualquiera de las dos la instancia permanece encendida y la respuesta baja a ~0.5 s.
+Con cualquiera de las dos primeras la instancia permanece encendida y la respuesta baja a ~0.5 s.
 La opcion definitiva es un plan de pago de Render (sin apagado por inactividad).
 
 ## 7. Diagnostico

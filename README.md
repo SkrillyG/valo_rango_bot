@@ -7,7 +7,7 @@ que Render usa como **Root Directory**.
 
 ```
 .
-├── .github/workflows/keepalive.yml   # cron cada 7 min contra /health (evita el cold start)
+├── .github/workflows/keepalive.yml   # cron cada 7 min contra /health (verificar que Actions lo ejecuta)
 ├── .gitignore
 ├── README.md
 └── valo_rango_bot/                   # Root Directory de Render
