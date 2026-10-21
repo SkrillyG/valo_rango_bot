@@ -518,26 +518,32 @@ El `.env` esta en `.gitignore`: no se sube nunca.
 
 ### Estructura
 
+Este repositorio contiene una sola carpeta de codigo: `valo_rango_bot/`. Esa carpeta es el
+**Root Directory** que usa Render.
+
 ```
-valo_rango_bot/
-├── index.js              entry point: valida env, migra y levanta el servidor
-├── src/
-│   ├── config.js         carga de .env y valores por defecto
-│   ├── logger.js         log con niveles y redaccion de secretos
-│   ├── crypto.js         AES-256-GCM, hash de token, comparacion timing-safe
-│   ├── db.js             pool de Postgres y acceso a la tabla streamers
-│   ├── cache.js          cache TTL con valores obsoletos
-│   ├── ratelimit.js      ventanas de limite por clave
-│   ├── messages.js       plantillas ES/EN, posesivo y catalogo de errores
-│   ├── valorant.js       cliente HenrikDev (v3 con fallback v1)
-│   ├── twitch.js         OAuth de Twitch
-│   ├── urls.js           resolucion de la URL publica
-│   ├── auth.js           rutas /auth/*
-│   ├── views.js          HTML de la portada y de /setup
-│   ├── setup.js          rutas /setup (guardar, regenerar, borrar)
-│   ├── rank.js           rutas /rank, /rango y /api/rank
-│   └── server.js         Express, sesiones, rate limit por IP
-├── test/smoke.js         test end-to-end con pg-mem
-├── .env.example          plantilla de variables
-└── package.json
+.
+├── .github/workflows/keepalive.yml   cron cada 5 min contra /health (evita que el plan gratis se duerma)
+├── README.md                         esta guia
+└── valo_rango_bot/                   <- Root Directory de Render
+    ├── index.js              entry point: valida env, migra y levanta el servidor
+    ├── src/
+    │   ├── config.js         carga de .env y valores por defecto
+    │   ├── logger.js         log con niveles y redaccion de secretos
+    │   ├── crypto.js         AES-256-GCM, hash de token, comparacion timing-safe
+    │   ├── db.js             pool de Postgres y acceso a la tabla streamers
+    │   ├── cache.js          cache TTL con valores obsoletos
+    │   ├── ratelimit.js      ventanas de limite por clave
+    │   ├── messages.js       plantillas ES/EN, posesivo y catalogo de errores
+    │   ├── valorant.js       cliente HenrikDev (v3 con fallback v1)
+    │   ├── twitch.js         OAuth de Twitch
+    │   ├── urls.js           resolucion de la URL publica
+    │   ├── auth.js           rutas /auth/*
+    │   ├── views.js          HTML de la portada y de /setup
+    │   ├── setup.js          rutas /setup (guardar, regenerar, borrar)
+    │   ├── rank.js           rutas /rank, /rango y /api/rank
+    │   └── server.js         Express, sesiones, rate limit por IP
+    ├── test/smoke.js         test end-to-end con pg-mem
+    ├── .env.example          plantilla de variables
+    └── package.json
 ```
