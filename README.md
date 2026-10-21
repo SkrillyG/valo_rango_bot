@@ -17,7 +17,7 @@ que Render usa como **Root Directory**.
 └── valo_rango_bot/                   # Root Directory de Render
     ├── .env.example
     ├── .gitignore
-    ├── README.md                     # guia operativa completa
+    ├── README.md                     # GUIA COMPLETA (desde cero, paso a paso)
     ├── index.js
     ├── package.json
     ├── package-lock.json
@@ -27,8 +27,24 @@ que Render usa como **Root Directory**.
 
 - Servicio: https://valo-rango-bot.onrender.com
 - Render Service ID: `srv-d7n7dbipmmbs73cbtpng`
-- Documentacion del servicio, deploy, comandos de Nightbot/StreamElements y diagnostico:
+- **Guia completa (para quien no sabe de programacion):**
   [`valo_rango_bot/README.md`](./valo_rango_bot/README.md)
+
+## La guia paso a paso
+
+Todo el detalle esta en [`valo_rango_bot/README.md`](./valo_rango_bot/README.md), organizado en:
+
+| Parte | Contenido |
+|---|---|
+| 1-2 | Que necesitas y como conseguir tu API key de Valorant |
+| 3 | Configurar tu canal en la pagina `/setup` |
+| 4 | Poner el comando en **Nightbot** |
+| 5 | Poner el comando en **StreamElements** |
+| 6 | Probarlo y verificar que funciona |
+| 7 | Uso diario: editar, regenerar token, borrar datos |
+| 8 | Despliegue desde cero (Render + Twitch) |
+| 9 | Problemas frecuentes y como se arreglan |
+| 10-12 | Glosario, seguridad y referencia tecnica |
 
 ## Despliegue rapido
 

@@ -1,61 +1,454 @@
 # ValoRangoBot
 
-API publica multi-streamer que devuelve el **rango de Valorant** (tier + RR) en texto plano,
-pensada para consumirse desde **Nightbot** y **StreamElements** con un simple `!rank`.
-
-Cada streamer tiene su propia configuracion (su propia API key del proveedor, su propio Riot ID
-y su propio token de comando), pero todos comparten el mismo servicio desplegado.
+Un servicio web que responde **el rango de Valorant de un jugador** en una sola linea de texto,
+para que puedas tener un comando `!rank` en tu canal de Twitch.
 
 - **Servicio en produccion:** https://valo-rango-bot.onrender.com
 - **Repositorio:** https://github.com/SkrillyG/valo_rango_bot
-- **Entrada unica:** `index.js` (`npm start`)
+- **Funciona con:** Nightbot y StreamElements
+- **Idiomas:** espanol e ingles
 
 ---
 
-## 1. Como funciona
+## Que es esto en 30 segundos
+
+Tu canal de Twitch necesita un bot que, cuando alguien escribe `!rank`, muestre el rango de
+Valorant. Nightbot y StreamElements no saben consultar el rango por si solos: solo saben
+**llamar a una direccion web** y mostrar lo que esta responda.
+
+`ValoRangoBot` es esa direccion web. Tu canal pide el rango, el bot se lo devuelve escrito.
 
 ```
-Streamer                Este servicio                    Proveedor
-   |                        |                                |
-   |  login Twitch  ------> |  OAuth (state firmado)         |
-   |  pega su key  ------> |  key cifrada (AES-256-GCM)     |
-   |  Riot ID + region --> |  fila en Postgres              |
-   | <--- token + comando |                                |
-   |                        |                                |
-   |  !rank  --> Nightbot/StreamElements --> GET /rank?token=... |
-   |                        |   valida token (hash)          |
-   |                        |   descifra key del dueno       |
-   |                        |   consulta MMR --------------> |
-   |                        |   cachea 90 s por streamer     |
-   | <-- "Rango de Kira: Diamante 2 (34 RR)"                 |
+Alguien escribe        el bot de tu canal             ValoRangoBot
+      !rank     ----->   pide la informacion   ----->   busca el rango
+      <-------------   muestra la respuesta   <-----   "Rango de Kira: Diamante 2 (34 RR)"
 ```
 
-Claves y responsabilidades:
+### Las dos llaves (entiende esto y el resto tiene sentido)
 
-| Concepto | Quien lo tiene | Para que sirve |
+| | Que es | Quien lo tiene | Donde vive | Para que sirve |
+|---|---|---|---|---|
+| **API key** | Una llave larga que da el servicio de datos de Valorant (HenrikDev) | **Tu**, una por canal | Se guarda **cifrada** en la base de datos del servidor | Para poder preguntar el rango |
+| **Token del bot** | Un codigo corto y aleatorio que genera este bot | **Tu**, uno por canal | Va dentro del comando de chat | Es lo que demuestra "este comando es mio" |
+
+Truco para no liarse: **la API key nunca sale de la base de datos** (nadie la ve, ni los
+moderadores). **El token si es publico**: va escrito en el comando de chat, asi que los
+moderadores de tu canal pueden leerlo. Por eso el bot te avisa de eso y te da un boton para
+cambiarlo cuando quieras.
+
+Si pierdes o te roban el token, no pasa nada: entras en `/setup` y le das a **"Regenerar token"**.
+Si pierdes la API key, entras en `/setup` y la pegas otra vez.
+
+---
+
+## Parte 1 - Que necesitas antes de empezar
+
+- [ ] Una **cuenta de Twitch** (la misma que usas para tu canal).
+- [ ] Una **cuenta de Nightbot** o de **StreamElements** (la que uses para el chat de tu canal).
+- [ ] Una **cuenta en el panel de HenrikDev** para sacar tu API key (se explica en la Parte 2).
+- [ ] Saber tu **Riot ID** de Valorant: por ejemplo `Kira` + `0123`.
+      Lo ves en tu perfil de Valorant, arriba a la derecha, al lado de tu nombre.
+      O en tu pagina de Riot ID: https://www.riotgames.com/account (columna "Riot ID").
+
+> **¿No sabes cual es tu region?** `eu` = Europa, `na` = America del Norte, `ap` = Asia-Pacifico,
+> `kr` = Corea del Sur, `latam` = America Latina, `br` = Brasil. Si estas en España: `eu`.
+
+---
+
+## Parte 2 - Consigue tu API key (5 minutos)
+
+La API key es el permiso que le das al servicio de datos de Valorant para que te pueda
+responder. Es **gratis** y se consigue en un minuto.
+
+### Opcion A - Con el panel web (recomendada)
+
+1. Abre **https://api.henrikdev.xyz/dashboard/** e inicia sesion (puedes entrar con Google o
+   Discord).
+2. En el **menu lateral**, pulsa **"API Keys"**.
+3. Pulsa el boton **"Generate New Key"**.
+4. Rellena el formulario:
+   - **Name**: el nombre de tu canal (por ejemplo `KiraValorant`)
+   - **Description**: escribe algo real, por ejemplo `Comando de rango para el canal de Kira`.
+     (Twitch no, HenrikDev: si escribes `test` u `prueba` te lo rechazan automaticamente.)
+   - **Scope / permisos**: elige **`VALORANT (Basic)`**.
+5. Pulsa **Create** y **copia la key**. **Solo se muestra una vez**: si la pierdes, genera otra.
+
+### Opcion B - Por Discord (la mas rapida, sin registrarte)
+
+1. Entra en el Discord de HenrikDev: https://discord.com/invite/X3GaVkX2YN
+2. **Verifica** tu cuenta de Discord con el bot que te aparecera.
+3. Ve al canal **`#get-a-key`**.
+4. En el desplegable elige **`VALORANT (Basic Key)`**.
+5. El bot te devuelve la key al instante.
+
+### Donde pegarla
+
+La key **nunca** se pone en Nightbot ni en StreamElements. Se pega en la pagina de configuracion
+del bot (Parte 3), que la guarda cifrada.
+
+---
+
+## Parte 3 - Configura tu canal (3 minutos)
+
+1. Abre **https://valo-rango-bot.onrender.com/setup** en tu navegador.
+2. Pulsa el boton **"Conectar con Twitch"** (o "Iniciar sesion").
+3. Se abre Twitch: **inicia sesion** si hace falta y pulsa **"Autorizar"** / **"Allow"**.
+   Twitch te devuelve a la pagina de configuracion. Ya estas dentro con tu sesion de Twitch.
+4. Rellena el formulario:
+   - **API key del proveedor** -> pega la key de la Parte 2.
+   - **Riot ID - name** -> tu nombre de Valorant (ej. `Kira`).
+   - **Riot ID - tag** -> tu etiqueta (ej. `0123`). Son los numeros detras de la `#`.
+   - **Region** -> `eu`, `na`, `ap`, `kr`, `latam` o `br`.
+   - **Plataforma** -> `pc`, `console` o `ps` (si juegas en PS5, elige `ps`).
+   - **Idioma** -> `es` (espanol) o `en` (ingles). Decide el idioma del mensaje que veran en el chat.
+5. Pulsa **"Guardar"**.
+6. La pagina te muestra:
+   - Un **token** (codigo largo). **Copialo**, lo vas a necesitar en la Parte 4.
+   - Los **comandos ya montados** para Nightbot y para StreamElements. Solo tienes que copiar el
+     que uses y pegarlo en tu bot de chat (Partes 4 y 5).
+
+> **Truco:** hay un boton **"Copiar"** al lado de cada comando. Pulsa ese boton y ya lo tienes en
+> el portapapeles, sin errores de tecleo. **Copia el comando entero, desde `!commands` hasta el
+> final**, incluyendo el token.
+
+---
+
+## Parte 4 - Nightbot
+
+1. En el **panel de Nightbot** (https://nightbot.tv) entra en tu canal.
+2. En el chat de tu canal escribe (o usa el panel de comandos):
+
+   ```
+   !commands add !rank $(urlfetch https://valo-rango-bot.onrender.com/rank?token=PEGA_AQUI_TU_TOKEN)
+   ```
+
+   Ojo: sustituye `PEGA_AQUI_TU_TOKEN` por tu token. Si copiaste con el boton "Copiar", ya
+   vendra todo puesto.
+3. Nightbot responde con un mensaje de confirmacion. Listo.
+
+### Si Nightbot no acepta `!commands add`
+
+Las instalaciones mas antiguas de Nightbot usan el comando antiguo. Prueba con:
+
+```
+!addcom !rank $(urlfetch https://valo-rango-bot.onrender.com/rank?token=PEGA_AQUI_TU_TOKEN)
+```
+
+Las dos formas hacen lo mismo.
+
+### Explicacion de los simbolos (para que no rompas nada)
+
+| Parte | Que significa |
+|---|---|
+| `!rank` | Lo que escribe la gente en el chat. Puedes cambiarlo a `!rango`, `!val`... |
+| `$(urlfetch ...)` | La funcion de Nightbot que "va a esa direccion y me trae lo que pone" |
+| `?token=...` | La parte que identifica tu canal. Sin ella el bot no sabe de quien es el rango |
+
+---
+
+## Parte 5 - StreamElements
+
+1. En el **panel de StreamElements** (https://streamelements.com) entra en tu canal.
+2. En el chat escribe:
+
+   ```
+   !command add !rank $(customapi https://valo-rango-bot.onrender.com/rank?token=PEGA_AQUI_TU_TOKEN)
+   ```
+
+   De nuevo: si copiaste con el boton "Copiar", el token ya va incluido.
+3. StreamElements responde con un mensaje de confirmacion. Listo.
+
+### Diferencias con Nightbot que conviene saber
+
+| | Nightbot | StreamElements |
 |---|---|---|
-| **API key de HenrikDev** | cada streamer, una por canal | consulta el MMR de ese streamer |
-| **Token del bot** | cada streamer, uno por canal | se mete en la URL del comando de chat |
-| **`ENCRYPTION_KEY`** | el servicio | cifra las API keys en la base de datos |
-| **`SESSION_SECRET`** | el servicio | firma la cookie de sesion (login + formulario) |
+| Como se llama la funcion | `$(urlfetch ...)` | `$(customapi ...)` |
+| Limite de texto | 400 caracteres | 400 bytes (corta lo que sobra) |
+| Tiempo maximo de espera | normal | 15 segundos |
+| Puede mandar cabeceras | no | no |
 
-El token **no** es la key: con el token el bot busca al dueno y usa la key que ese streamer
-guardo. La key nunca viaja en la URL del comando ni se imprime en ninguna respuesta.
+Por eso la respuesta del bot es **corta y en texto plano**: si fuera larga, StreamElements la
+cortaria a media palabra.
 
-## 2. Rutas
+---
+
+## Parte 6 - Probalo
+
+1. En el chat de tu canal escribe `!rank` (o el nombre que le hayas puesto).
+2. Deberias ver algo como:
+
+   ```
+   Rango de Kira: Diamante 2 (34 RR)
+   ```
+
+   o en ingles:
+
+   ```
+   Kira's current rank is: Diamond 2 (34 RR)
+   ```
+
+3. **Si no funciona**, mira la tabla de la **Parte 9 (Problemas frecuentes)**. Casi siempre es
+   una de estas cuatro cosas:
+   - el comando tiene un espacio de mas o le falta el token,
+   - el token se regenero y el comando tiene el antiguo,
+   - la region o el Riot ID estan mal,
+   - la API key no se guardo.
+
+---
+
+## Parte 7 - Uso diario
+
+Entra siempre en **https://valo-rango-bot.onrender.com/setup** (con la sesion de Twitch iniciada).
+
+| Quiero... | Que hago | Ojo |
+|---|---|---|
+| **Cambiar mi Riot ID, region o idioma** | Relleno el formulario y pulso "Guardar" | El token **no** cambia: tu comando de chat sigue funcionando |
+| **Cambiar mi API key** | Pego la key nueva en el campo de la key y pulso "Guardar" | Si dejo el campo **vacio**, se conserva la que ya tenia |
+| **Cambiar mi token** (por seguridad) | Pulso "Regenerar token" | El token viejo deja de funcionar. **Actualiza el comando** en Nightbot/StreamElements copiandolo otra vez desde `/setup` |
+| **Borrar todo y empezar de cero** | Pulso "Borrar mis datos" | Se borra tu fila de la base de datos. Tu comando dejara de responder |
+
+### Por que regenerar el token
+El token va escrito dentro del comando de chat, asi que **los moderadores de tu canal pueden
+verlo**. Con el token, alguien podria preguntar el rango usando tu servicio. No es grave (solo
+muestran tu propio rango), pero si te incomoda, regenera el token y copia el comando nuevo.
+
+---
+
+# Parte 8 - Despliegue desde cero
+
+> Esta parte es para quien **instala** el servicio. Si solo quieres usar el comando de tu canal,
+> no necesitas leerla. El servicio ya esta desplegado en https://valo-rango-bot.onrender.com.
+
+## 8.1 Que necesitas
+
+- Una cuenta de **Render** (https://render.com) - el sitio donde vive el servicio.
+- Una cuenta de **Twitch de desarrollador** (https://dev.twitch.tv/console/apps) - da las
+  credenciales con las que se hace el "Conectar con Twitch".
+- Una base de datos **PostgreSQL** - Render la crea gratis en 2 clics.
+
+## 8.2 Crear la base de datos
+
+1. En https://dashboard.render.com pulsa **New +** -> **Postgres**.
+2. Nombre: `valo_rango_db`. **Region: la misma** que usaras para el servicio web.
+3. Plan: **Free**.
+4. **Create Database**. Cuando termine, abre la pestana **Info** y copia la
+   **Internal Database URL** (empieza por `postgresql://...` y el host es privado, tipo
+   `dpg-xxxx-a`). Esa URL es tu variable `DATABASE_URL`.
+   - Usa siempre la **Internal**, no la externa: es mas rapida y no sale a internet.
+
+## 8.3 Crear la app de Twitch
+
+1. Abre https://dev.twitch.tv/console/apps e inicia sesion con Twitch.
+2. Pestana **Applications** -> **Register an Application**.
+3. Rellena:
+   - **Name**: `ValoRangoBot` (tiene que ser unico entre todas las apps de Twitch).
+   - **OAuth Redirect URLs**: escribe `https://TU-SERVICIO.onrender.com/auth/callback`
+     y pulsa **Add**. La ruta `/auth/callback` es **exacta**: si te equivocas, el login fallara.
+   - **Category**: `Website Integration`.
+   - Tipo de cliente: **Confidential** (el bot guarda el secret en un servidor; con "Public" no
+     se puede usar el flujo de login por codigo).
+   - Marca **"I'm not a robot"** y pulsa **Create**.
+4. **Client ID**: se ve directamente en la pagina de la app. Copialo.
+5. **Client Secret**: abajo, pulsa **New Secret** -> **Show** -> copialo.
+   (Cada vez que generes uno nuevo, el anterior deja de funcionar.)
+
+> **Requisito de Twitch:** tu cuenta de Twitch necesita **2FA (doble factor)** activado para poder
+> registrar una app. Se activa en Twitch -> foto de perfil -> **Settings** -> **Security and
+> Privacy** -> **Set Up Two-Factor Authentication** (te pide el movil + una app de autenticador).
+
+## 8.4 Crear el servicio web
+
+En https://dashboard.render.com -> **New +** -> **Web Service** -> conecta el repositorio
+`SkrillyG/valo_rango_bot`.
+
+| Ajuste | Valor | Por que |
+|---|---|---|
+| Branch | `main` | |
+| **Root Directory** | `valo_rango_bot` | **Obligatorio.** El `package.json` esta dentro de esa carpeta. Si lo dejas vacio el deploy falla |
+| Runtime | Node | |
+| Build Command | `npm ci` | |
+| Start Command | `npm start` | |
+| Type | **Web Service** | Nunca "Background Worker": este bot escucha peticiones web |
+| Health Check Path | `/health` | Render lo usa para saber si el servicio esta vivo |
+
+## 8.5 Variables de entorno
+
+En el servicio web -> menu lateral -> **Environment** -> **+ Add Environment Variable**.
+Anade estas 6:
+
+| Variable | Valor |
+|---|---|
+| `DATABASE_URL` | La **Internal Database URL** del punto 8.2 |
+| `ENCRYPTION_KEY` | Un texto aleatorio largo (ver abajo) |
+| `SESSION_SECRET` | Otro texto aleatorio largo (ver abajo) |
+| `TWITCH_CLIENT_ID` | El Client ID de tu app de Twitch |
+| `TWITCH_CLIENT_SECRET` | El Client Secret de tu app de Twitch |
+| `BASE_URL` | `https://TU-SERVICIO.onrender.com` |
+
+Para generar las dos claves secretas, en una terminal (en Windows con Git Bash, en Mac/Linux con
+la Terminal):
+
+```bash
+openssl rand -hex 32
+```
+
+Ejecutalo dos veces: la primera para `ENCRYPTION_KEY` y la segunda para `SESSION_SECRET`. Son 64
+letras y numeros.
+
+En el campo *Value* de Render **pégalas tal cual** (no hace falta usar el botón del ojo, pero si
+quieres comprobarlo, ese botón te muestra el valor un momento antes de guardarlo).
+
+Cuando termines de anadir las variables, pulsa **Save** y elige **"Save and deploy"** (no
+"Save only": esa deja las variables guardadas pero **no reinicia el servicio**, asi que no se
+aplican hasta el proximo deploy).
+
+## 8.6 Desplegar y comprobar
+
+1. En la pestana **Events** espera a ver `Build succeeded` y `Deploy live` (1-2 minutos).
+2. Abre `https://TU-SERVICIO.onrender.com/health`. Debe salir:
+   ```json
+   {"ok":true,"baseDeDatos":true,"degradado":false,"faltantes":[]}
+   ```
+   Si `degradado` es `true`, el campo `faltantes` te dice **exactamente** que variable falta.
+3. Abre `https://TU-SERVICIO.onrender.com/setup` y haz la Parte 3.
+
+## 8.7 Trampas de Render (leelas antes de que te ocurran)
+
+- **El disco no es permanente.** Cada redeploy borra todo el sistema de archivos. Por eso toda la
+  configuracion vive en Postgres y nunca en ficheros.
+- **El plan gratuito se duerme** tras ~15 minutos sin visitas y tarda ~50 segundos en despertar.
+  Eso rompe el limite de 15 segundos de StreamElements: el primer comando tras una pausa dara
+  error. **Solucion:** un "keep-alive" que visite `/health` cada 5 minutos.
+  Este repositorio ya trae `.github/workflows/keepalive.yml` que lo hace. Para que funcione, en
+  GitHub -> **Settings -> Actions -> General**, desmarca **"Disable scheduled workflows"**.
+  (Tambien sirve UptimeRobot gratuito, o un plan de pago de Render.)
+- **Los cron de Render no existen** en los Web Services. Si necesitas tareas periodicas, crea
+  aparte un Worker.
+- **Nunca subes un archivo `.env` al repositorio.** Las variables se ponden en el panel de Render.
+  El `.env` esta en `.gitignore` y solo se usa en tu ordenador.
+
+## 8.8 Si el deploy falla
+
+| Lo que ves en los logs | Por que pasa | Que hacer |
+|---|---|---|
+| `npm ci can only install packages when your package.json and package-lock.json ... are in sync` | El `package-lock.json` no coincide con el `package.json` | `npm install --package-lock-only` y subir el lock |
+| `npm ERR! code ENOENT ... package.json` | El **Root Directory** no apunta a `valo_rango_bot` | Corregir *Root Directory* y hacer **Manual Deploy** |
+| `[ERROR] Variables de entorno obligatorias ausentes: ...` | Faltan variables en *Environment* | Completar la tabla del punto 8.5 |
+| `no se pudo preparar la base de datos` | `DATABASE_URL` mal copiada | Copiar de nuevo la **Internal Database URL** |
+| `ENCRYPTION_KEY es demasiado corta` | La clave tiene menos de 16 caracteres | `openssl rand -hex 32` |
+
+**Modo degradado (para que no te quedes sin servicio).** Si falta alguna variable, el servicio
+**no se cae**: arranca igual, responde `200` en `/health` con `"degradado": true` y la lista de lo
+que falta, enseña un aviso en la portada y en `/setup`, y `/rank` devuelve un texto legible en vez
+de un error 500. Un despliegue nunca se queda en "failed" por un ajuste de entorno: se ve que
+falta algo y se arregla sin parar el servicio.
+
+---
+
+## Parte 9 - Problemas frecuentes
+
+| Lo que ves en el chat | Por que | Como se arregla |
+|---|---|---|
+| `Configuracion no encontrada. Revisa tu comando.` | El token no existe o esta caducado (regeneraste) | Vuelve a `/setup` y copia el comando otra vez |
+| `Falta configurar el bot en https://...` | No has pegado tu API key | Entra en `/setup`, pega la key y guarda |
+| `No se encontro el jugador. Revisa tu Riot ID.` | Riot ID o region equivocados | Corrige el nombre, la etiqueta o la region en `/setup` |
+| `La key del proveedor no es valida.` | La API key esta caducada o mal copiada | Genera una nueva y pegala en `/setup` |
+| `No se pudo obtener el rango, intenta de nuevo en un momento.` | El servicio de datos de Valorant esta caido o te ha dado un limite de peticiones | Espera un minuto y vuelve a probar |
+| `Demasiadas peticiones, espera un momento.` | Alguien esta llamando al comando muchisimo | Espera un minuto |
+| `Moved Permanently` | El comando usa `http://` en vez de `https://` | Recopialo desde `/setup` |
+| `Could not connect to remote server` | El servicio estaba dormido (plan gratis) | Activa el keep-alive contra `/health` |
+| El mensaje sale con un `!` o un `/` delante | Se copio un simbolo de mas | Recopiar el comando entero desde `/setup` |
+| Sale el rango de otro jugador | El token es de otro canal | Copia tu comando de `/setup` |
+
+### Comprobaciones rapidas (si te mola la terminal)
+
+```bash
+# 1. ¿El servicio esta vivo?
+curl -s https://valo-rango-bot.onrender.com/health
+
+# 2. ¿Mi token funciona? (pega tu token)
+curl -s "https://valo-rango-bot.onrender.com/rank?token=PEGA_AQUI_TU_TOKEN"
+
+# 3. ¿En ingles?
+curl -s "https://valo-rango-bot.onrender.com/rank?token=PEGA_AQUI_TU_TOKEN&lang=en"
+
+# 4. ¿La pagina de configuracion carga?
+curl -s -o /dev/null -w "%{http_code}\n" https://valo-rango-bot.onrender.com/setup
+```
+
+En los logs de Render, cada peticion deja una linea con la ruta, el tiempo y de donde salio el
+dato (`cache`, `v3`, `v1`, `stale`):
+
+```
+[2026-10-21T18:40:11.204Z] INFO GET /rank -> 200 { ms: 512, origen: 'v3' }
+```
+
+---
+
+## Parte 10 - Glosario
+
+| Palabra | Significado |
+|---|---|
+| **API key** | Llave que da un servicio para que le dejes consultar datos. aqui, la del proveedor de datos de Valorant |
+| **Token** | Codigo aleatorio que identifica a tu canal ante el bot |
+| **OAuth** | El mecanismo con el que Twitch deja que tu bot "entre" como tu sin pedirte tu contrasena |
+| **Web Service** | En Render, un servicio que espera peticiones web (es lo que es este bot) |
+| **Postgres / PostgreSQL** | La base de datos donde se guardan las configuraciones (claves cifradas, tokens hasheados) |
+| **Cifrar** | Guardar algo de forma que no se pueda leer sin una llave |
+| **Hashear** | Convertir algo en una huella digital irreversible: se puede comprobar, pero no recuperar |
+| **Root Directory** | En Render, la carpeta del repositorio donde vive el codigo (`valo_rango_bot`) |
+| **Keep-alive** | Una visita automatica cada pocos minutos para que el plan gratis no se duerma |
+| **Deadline** | Tiempo maximo que el bot se da para responder antes de rendirse |
+
+---
+
+## Parte 11 - Seguridad
+
+- Las **API keys se cifran** (AES-256-GCM) antes de llegar a la base de datos. La llave del cifrado
+  vive en `ENCRYPTION_KEY`, fuera del repositorio.
+- Los **tokens se guardan hasheados** (SHA-256). En la base de datos no hay ningun token en claro y
+  **ningun token se puede recuperar**: solo regenerarlo.
+- Los **logs ocultan** cualquier `token`, `key`, `secret` o `password` que aparezca.
+- **Ninguna respuesta** enseña la key ni el token. La pagina `/setup` solo muestra el token cuando
+  es nuevo, y la key nunca se vuelve a imprimir.
+- **Cada streamer usa su propia key** y solo se consultan datos de su propio Riot ID: el token de
+  un streamer no puede usarse para preguntar el rango de otro.
+- **Limite de peticiones**: 30 por minuto y token, y 20 por minuto y IP en `/setup` y `/auth`.
+- El **token va en la URL del comando**, asi que los moderadores del canal pueden verlo. `/setup` te
+  avisa y ofrece regenerarlo en un clic.
+- La **cookie de sesion** es `httpOnly`, `sameSite=lax` y `secure` en produccion.
+
+### Si crees que se ha filtrado algo
+
+1. **API key**: entra en el panel de HenrikDev, revoca esa key y genera otra. Vuelve a `/setup` y
+   pegala.
+2. **Token**: `/setup` -> "Regenerar token" -> copia el comando nuevo en Nightbot/StreamElements.
+3. **Claves del servidor**: en Render -> Environment -> genera nuevos `ENCRYPTION_KEY` y
+   `SESSION_SECRET` -> **Save and deploy**. Ojo: al cambiar `ENCRYPTION_KEY` las API keys ya
+   guardadas dejan de descifrarse, asi que los streamers tendran que volver a pegarlas.
+4. **Contrasena de la base de datos**: en Render -> Postgres -> **Info** -> **Credentials** ->
+   crea un usuario nuevo (Render lo pone como usuario principal y actualiza las URLs), actualiza
+   `DATABASE_URL` en el servicio web, espera a que `/health` siga respondiendo `ok:true` y solo
+   entonces elimina el usuario antiguo.
+
+---
+
+## Parte 12 - Referencia tecnica
+
+### Rutas
 
 | Ruta | Respuesta | Uso |
 |---|---|---|
-| `GET /rank?token=<token>` | Texto plano con el rango del dueno del token | Comando de chat (Nightbot / StreamElements) |
-| `GET /rank?token=<token>&lang=es\|en` | Fuerza el idioma del mensaje | Igual que el anterior |
+| `GET /rank?token=<token>` | Texto plano con el rango del dueño del token | Comando de chat |
+| `GET /rank?token=<token>&lang=es\|en` | Fuerza el idioma | Igual que el anterior |
 | `GET /rango?token=<token>` | Igual que `/rank` pero siempre en espanol | Alias en espanol |
-| `GET /api/rank?token=<token>` | JSON `{ ok, twitch_login, riot_id, rango, rr, ... }` | Consumo programatico. Solo sirve el valor cacheado y nunca expone la key ni el token |
-| `GET /setup` | Pagina de configuracion | Login Twitch + formulario |
+| `GET /api/rank?token=<token>` | JSON `{ ok, twitch_login, riot_id, rango, rr, ... }` | Consumo programatico. Solo devuelve el valor cacheado y nunca expone la key ni el token |
+| `GET /setup` | Pagina de configuracion | Login con Twitch + formulario |
 | `GET /auth/login` | Redirige a Twitch | Boton "Conectar con Twitch" |
-| `GET /auth/callback` | Callback OAuth de Twitch | **Registrar aqui la Redirect URL** |
+| `GET /auth/callback` | Callback de OAuth | **Aqui va la Redirect URL de Twitch** |
 | `GET /auth/logout` | Cierra la sesion | Boton "Salir" |
 | `GET /health` | JSON de estado | Health check de Render, UptimeRobot |
-| `GET /` | Portada con las instrucciones | Comprobacion rapida |
+| `GET /` | Portada con instrucciones | Comprobacion rapida |
 
 `/rank` y `/rango` devuelven **siempre HTTP 200** con `Content-Type: text/plain; charset=utf-8`.
 Si algo falla se responde con un mensaje legible en lugar de un 4xx/5xx, porque el proxy de
@@ -64,83 +457,7 @@ StreamElements sustituye cualquier error por un texto generico que no dice nada.
 Los mensajes nunca empiezan por `/`, `.` ni `!` y siempre miden menos de 400 caracteres
 (Nightbot exige `< 400`; StreamElements trunca a 400 bytes).
 
-### Mensajes que puede devolver
-
-| Situacion | Mensaje (es) |
-|---|---|
-| Todo correcto | `Rango de Kira: Diamante 2 (34 RR)` |
-| Token vacio o desconocido | `Configuracion no encontrada. Revisa tu comando.` |
-| El streamer no ha metido su key | `Falta configurar el bot en https://.../setup.` |
-| Riot ID no encontrado en el proveedor | `No se encontro el jugador. Revisa tu Riot ID.` |
-| Proveedor caido, limite o key invalida | `No se pudo obtener el rango, intenta de nuevo en un momento.` |
-| Demasiadas peticiones con el mismo token | `Demasiadas peticiones, espera un momento.` |
-
-Con `lang=en` los mismos mensajes salen en ingles (`Kira's current rank is: Diamond 2 (34 RR)`).
-El idioma por defecto es el que eligio el streamer en `/setup`.
-
-## 3. Guia para el streamer (5 minutos)
-
-1. **Conectar con Twitch.** Abre `https://<TU-DOMINIO>/setup` y pulsa "Conectar con Twitch".
-   Se inicia sesion con tu cuenta y se vuelve a la pagina de configuracion.
-2. **Pegar tu API key.** Ve a https://api.henrikdev.xyz/dashboard/ -> **API Keys** ->
-   **Generate New Key**, scope **VALORANT (Basic)**, y copiala en el campo "API key del proveedor".
-   Cada streamer usa su propia key. Si vuelves a entrar mas tarde, el campo aparece vacio y **dejarlo
-   vacio conserva la key que ya tenias guardada**.
-3. **Riot ID.** Escribe tu nombre y tu etiqueta de Valorant (por ejemplo `Kira` + `0123`), elige
-   region (`eu`, `na`, `ap`, `kr`, `latam`, `br`) y plataforma (`pc`, `console`, `ps`).
-4. **Idioma.** Elige espanol o ingles para el mensaje del chat.
-5. **Guardar.** Recibes tu **token** y los **comandos listos para copiar**. Copia el comando en tu
-   Nightbot o StreamElements y ya funciona.
-
-### Editar, regenerar y borrar
-
-- **Editar**: vuelve a `/setup` a cualquier momento, cambia los datos y guarda. El token **no**
-  cambia, asi que tu comando de chat sigue funcionando.
-- **Regenerar token**: boton "Regenerar token". El token antiguo deja de servir y te se muestra el
-  nuevo una sola vez: actualiza el comando de Nightbot/StreamElements.
-- **Borrar mis datos**: boton "Borrar mis datos". Se elimina tu fila de la base de datos (Riot ID y
-  key) y tu comando deja de responder.
-
-## 4. Comandos en Nightbot
-
-La documentacion actual de Nightbot usa `!commands add`:
-
-```
-!commands add !rank $(urlfetch https://TU-DOMINIO/rank?token=TU_TOKEN)
-```
-
-- `$(urlfetch url)` devuelve la respuesta cruda del endpoint: por eso `/rank` devuelve **texto plano**.
-- El limite de Nightbot es **400 caracteres**, asi que la respuesta debe ser corta (lo es).
-- Si tu version de Nightbot todavia acepta el alias legacy `!addcom`, funciona igual:
-  `!addcom !rank $(urlfetch https://TU-DOMINIO/rank?token=TU_TOKEN)`.
-- Para traducir al vuelo puedes anadir el idioma:
-  `!commands add !rankes $(urlfetch https://TU-DOMINIO/rank?token=TU_TOKEN&lang=es)`.
-
-## 5. Comandos en StreamElements
-
-Sintaxis canonica de `$(customapi)`:
-
-```
-!command add !rank $(customapi https://TU-DOMINIO/rank?token=TU_TOKEN)
-```
-
-Tambien siguen soportadas las formas antiguas con punto y `${...}`:
-
-```
-!command add !rank ${customapi.https://TU-DOMINIO/rank?token=TU_TOKEN}
-```
-
-Limitaciones de `$(customapi)` que conviene respetar:
-
-- **Solo GET** y **sin cabeceras**: por eso la API key vive en el servidor y nunca en el panel.
-- **Timeout de 15 s** (proxy de StreamElements, no configurable).
-- **Trunca la respuesta a 400 bytes**: por eso `/rank` es plano y corto.
-- **Query params percent-encoded y reordenados alfabeticamente**: no rompe nada, pero si tu token
-  acaba en `&` o con espacios, el comando fallara. Copia el comando tal cual.
-- **No sigue redirecciones**: usa siempre `https://`.
-- **Sin cache**: cada invocacion del comando hace una peticion nueva (el bot cachea 90 s por su lado).
-
-## 6. Variables de entorno
+### Variables de entorno
 
 | Variable | Obligatoria | Default | Descripcion |
 |---|---|---|---|
@@ -152,6 +469,7 @@ Limitaciones de `$(customapi)` que conviene respetar:
 | `BASE_URL` | recomendado | deduce del Host | Base publica del bot, p.ej. `https://valo-rango-bot.onrender.com` |
 | `DATABASE_SSL` | no | `false` | `true` si el proveedor de Postgres exige TLS |
 | `PORT` | no | `3000` | Puerto de escucha |
+| `NODE_ENV` | no | - | `production` en Render |
 | `HENRIK_API_BASE` | no | `https://api.henrikdev.xyz` | Base del proveedor. `https://eu.api.henrikdev.xyz` es mas rapido (sin Cloudflare) |
 | `CACHE_TTL_MS` | no | `90000` | Tiempo de vida de la cache por streamer |
 | `CACHE_STALE_MS` | no | `600000` | Ventana de cache obsoleta que se sirve si el proveedor falla |
@@ -164,28 +482,10 @@ Limitaciones de `$(customapi)` que conviene respetar:
 | `RATE_LIMIT_SETUP_MAX` | no | `20` | Peticiones por IP y ventana en `/setup` y `/auth` |
 | `SESSION_MAX_AGE_MS` | no | `2592000000` (30 dias) | Duracion de la cookie de sesion |
 
-Genera las dos claves secretas con:
-
-```bash
-openssl rand -base64 32
-```
-
 > Si cambias `ENCRYPTION_KEY`, las API keys ya guardadas dejan de descifrarse. Habra que volver a
 > pegarlas en `/setup`.
 
-### API key del proveedor (HenrikDev)
-
-Desde la v4.0.0 de la API la key es **obligatoria** para el streamer:
-
-1. Entra en https://api.henrikdev.xyz/dashboard/ e inicia sesion.
-2. Menú lateral -> **API Keys** -> **Generate New Key**.
-3. Nombre (por ejemplo `valo-rango-bot`) y scope **VALORANT (Basic)**.
-4. Copia la key: solo se muestra una vez.
-
-Alternativa sin registro: Discord https://discord.com/invite/X3GaVkX2YN -> canal `#get-a-key` ->
-desplegable **VALORANT (Basic Key)**. La key se genera al instante.
-
-El bot consulta el endpoint **v3**:
+### Como se consulta al proveedor
 
 ```
 GET https://api.henrikdev.xyz/valorant/v3/mmr/{region}/{platform}/{name}/{tag}
@@ -197,141 +497,7 @@ Si el v3 falla por `401/403` (key invalida) o `404` (Riot ID inexistente) no se 
 responde con el mensaje de error correspondiente. Para cualquier otro fallo, si hay un valor
 cacheado, se sirve el valor viejo antes que un error en pantalla.
 
-## 7. Deploy en Render
-
-### 7.1 Crear el Postgres
-
-1. En el dashboard de Render, **New + -> Postgres**.
-2. Nombre (por ejemplo `valo-rango-db`), region igual a la del servicio, plan gratuito.
-3. **Create Database**. Cuando este creado, copiala **Internal Database URL** y guardala: es la
-   variable `DATABASE_URL`.
-
-### 7.2 Crear la app de Twitch
-
-1. https://dev.twitch.tv/console/apps -> **Register an Application**.
-2. Nombre (por ejemplo `ValoRangoBot`) y una categoria.
-3. **OAuth Redirect URL**: `https://TU-DOMINIO/auth/callback` (exactamente esa ruta).
-4. Copia el **Client ID** y genera un **Client Secret**.
-
-### 7.3 Crear el Web Service
-
-| Ajuste | Valor |
-|---|---|
-| Repositorio | `SkrillyG/valo_rango_bot` |
-| Rama | `main` |
-| **Root Directory** | **`valo_rango_bot`** |
-| Runtime | Node |
-| Build Command | `npm ci` (o `npm install`) |
-| Start Command | `npm start` |
-| Type | **Web Service** (nunca Background Worker: este bot escucha HTTP) |
-| Health Check Path | `/health` |
-
-> El **Root Directory** es obligatorio: el `package.json` vive en `valo_rango_bot/`, no en la raiz
-> del repositorio. Si se deja vacio, Render no encuentra el `package.json` y el deploy falla.
-> Despues de cambiarlo hay que lanzar un **Manual Deploy** para que aplique al deploy actual.
-
-### 7.4 Variables de entorno en Render
-
-| Variable | Valor |
-|---|---|
-| `DATABASE_URL` | Internal Database URL del Postgres del punto 7.1 |
-| `ENCRYPTION_KEY` | `openssl rand -base64 32` (guárdala, no se puede recuperar) |
-| `SESSION_SECRET` | `openssl rand -base64 32` |
-| `TWITCH_CLIENT_ID` | Client ID de la app de Twitch |
-| `TWITCH_CLIENT_SECRET` | Client Secret de la app de Twitch |
-| `BASE_URL` | `https://<TU-SERVICIO>.onrender.com` |
-| `NODE_ENV` | `production` |
-
-> **Nunca subas un archivo `.env` al repositorio.** En Render las variables se definen en
-> *Environment* del servicio. El `.env` esta en `.gitignore` y solo se usa en local.
-
-### 7.5 Desplegar
-
-1. **Manual Deploy -> Deploy latest commit**.
-2. Espera a que el build termine y comprueba `https://<TU-SERVICIO>.onrender.com/health`.
-3. Si responde `{"ok":true,...}` el servicio esta vivo.
-4. Abre `https://<TU-SERVICIO>.onrender.com/setup`, conecta Twitch y pega tu key.
-5. Copia el comando a Nightbot o StreamElements.
-
-### 7.6 Trampas de Render
-
-- **El disco no es persistente.** El sistema de archivos se borra en cada redeploy: toda la
-  configuracion vive en Postgres, nunca en ficheros.
-- **El plan gratuito se duerme** tras ~15 minutos sin trafico y tarda ~50 s en despertar. Eso rompe
-  el timeout de 15 s de StreamElements: el primer comando tras una pausa dara error. La solucion
-  es un **keep-alive** contra `/health` (UptimeRobot gratuito cada 5 minutos o un workflow de
-  GitHub Actions con cron). Este repositorio ya incluye `.github/workflows/keepalive.yml`, que
-  consulta `/health` cada 5 minutos: para que funcione, en GitHub -> *Settings -> Actions ->
-  General* debe estar desmarcado "Disable scheduled workflows" (y el propio workflow tiene que
-  estar en `.github/workflows/` del repositorio raiz). Un plan de pago elimina el problema.
-- **El Cold Start y el timeout.** El bot tiene un deadline por peticion (`REQUEST_DEADLINE_MS`,
-  8 s por defecto) siempre por debajo del timeout de los proxies, asi que nunca se cuelga: en el
-  peor caso devuelve el mensaje de error legible.
-- **Render no ejecuta cron jobs.** Si necesitas tareas periodicas, usa un Worker aparte; este
-  servicio solo expone HTTP.
-
-### 7.7 Si el deploy falla
-
-| Sintoma en los logs de Render | Causa | Solucion |
-|---|---|---|
-| `npm ci can only install packages when your package.json and package-lock.json ... are in sync` | El `package-lock.json` no coincide con `package.json` | Regenerar el lock: `npm install --package-lock-only` y subirlo |
-| `npm ERR! code ENOENT ... package.json` | El **Root Directory** no apunta a `valo_rango_bot` | Corregir *Root Directory* y hacer **Manual Deploy** |
-| `[ERROR] Variables de entorno obligatorias ausentes: ...` | Faltan variables en *Environment* | Completar la tabla del punto 7.4 |
-| `no se pudo preparar la base de datos` | `DATABASE_URL` incorrecta o Postgres no enlazado | Enlazar el Postgres y copiar su *Internal Database URL* |
-| `ENCRYPTION_KEY es demasiado corta` | La clave de cifrado tiene menos de 16 caracteres | `openssl rand -base64 32` |
-
-**Modo degradado.** Si falta alguna variable, el servicio **no se cae**: arranca igual, responde
-`200` en `/health` con `"degradado": true` y la lista de variables que faltan, muestra un aviso en
-la portada y en `/setup`, y `/rank` devuelve un mensaje legible en vez de un error 500. Asi un
-despliegue nunca se queda "failed" por un ajuste de entorno: se ve que falta algo y se arregla
-sin downtime.
-
-## 8. Seguridad
-
-- Las **API keys se cifran** (AES-256-GCM) antes de tocar la base de datos. La clave de cifrado
-  vive en `ENCRYPTION_KEY`, fuera del repositorio.
-- Los **tokens se guardan hasheados** (SHA-256). La base de datos no contiene ningun token en
-  claro y ningun token se puede recuperar: solo regenerarlo.
-- **Los logs redaccionan** cualquier `token`, `key`, `secret` o `password` que aparezca.
-- **Ninguna respuesta** muestra la key ni el token del streamer. La pagina `/setup` solo muestra el
-  token cuando es nuevo, y la key nunca se vuelve a imprimir.
-- **Cada streamer usa su propia key** y solo se consultan datos de su propio Riot ID: el token de
-  un streamer no puede usarse para preguntar el rango de otro.
-- **Rate limit**: 30 peticiones/minuto por token y 20/minuto por IP en `/setup` y `/auth`.
-- **El token va en la URL del comando**, asi que los moderadores del canal pueden verlo. La pagina
-  `/setup` avisa de esto y ofrece regenerar el token en un click.
-- La cookie de sesion es `httpOnly`, `sameSite=lax` y `secure` en produccion.
-
-## 9. Diagnostico
-
-```bash
-curl -s https://<TU-DOMINIO>/health
-curl -s "https://<TU-DOMINIO>/rank?token=<TOKEN>"
-curl -s "https://<TU-DOMINIO>/rank?token=<TOKEN>&lang=en"
-curl -s "https://<TU-DOMINIO>/api/rank?token=<TOKEN>"
-curl -s https://<TU-DOMINIO>/setup
-```
-
-`/health` devuelve `ok`, `baseDeDatos`, `degradado`, `faltantes`, `uptimeSeg` y
-`twitchConfigurado`, y responde siempre `200` (para que Render lo use como health check sin
-marcar el deploy como fallido). En los logs de Render cada peticion deja una linea con ruta,
-duracion y origen del dato (`cache`, `v3`, `v1`, `stale`):
-
-```
-[2026-10-21T18:40:11.204Z] INFO GET /rank -> 200 { ms: 512, origen: 'v3' }
-```
-
-| Sintoma | Causa probable | Solucion |
-|---|---|---|
-| `Configuracion no encontrada. Revisa tu comando.` | Token equivocado o regenerado | Vuelve a copiar el comando desde `/setup` |
-| `Falta configurar el bot en ...` | El streamer no ha pegado su API key | Entrar en `/setup` y guardarla |
-| `No se encontro el jugador. Revisa tu Riot ID.` | Riot ID o region equivocados | Corregir en `/setup` |
-| `La key del proveedor no es valida.` | Key de HenrikDev caducada o mal copiada | Generar una nueva en `/setup` |
-| En el chat sale `Moved Permanently` | El comando usa `http://` | Usar `https://` |
-| En el chat sale `Could not connect to remote server` | Cold start o timeout del proxy | Activar keep-alive contra `/health` |
-| El comando responde con un `!` delante | Prefijo mal pegado al copiar | Recopiar el comando tal cual desde `/setup` |
-
-## 10. Desarrollo local
+### Desarrollo local
 
 ```bash
 cd valo_rango_bot
@@ -350,7 +516,7 @@ npm test
 
 El `.env` esta en `.gitignore`: no se sube nunca.
 
-## 11. Estructura
+### Estructura
 
 ```
 valo_rango_bot/
