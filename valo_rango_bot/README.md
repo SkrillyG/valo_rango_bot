@@ -123,17 +123,25 @@ recibir una peticion tarda **10-12 segundos** en despertar, y el proxy de Stream
 un timeout de 15 segundos: por eso el primer comando tras una pausa fallaba mientras el
 siguiente funcionaba.
 
-Hay tres capas de proteccion, de mas a menos fiable:
+**El keep-alive NO es imprescindible para que el bot funcione.** El servicio tiene un deadline
+de 12 s por peticion, asi que incluso recién despertando responde siempre por debajo del timeout
+de 15 s de StreamElements, y entrega el rango en español (`/rango`) y en ingles (`/rank`). Lo que
+consigue el keep-alive es bajar la latencia de ~12 s a ~0.5 s y evitar el borde de timeout.
+
+Hay tres capas de proteccion:
 
 1. **Health Check Path de Render** = `/health`. Render sondea su propia instancia mientras
    esta viva, asi que es la capa que no depende de terceros.
 2. **UptimeRobot** (gratis, 5 minutos): monitor HTTP contra `https://valo-rango-bot.onrender.com/health`.
    Es la opcion externa mas fiable y la que se recomienda.
-3. **GitHub Actions** (`.github/workflows/keepalive.yml`): cron cada 7 minutos contra la misma
-   ruta. OJO: en este repositorio el workflow aparece registrado como `active` pero **GitHub no
-   lo ejecuta** (0 ejecuciones tras 15 minutos). Si no es una limitacion de la cuenta,
-   hay que activar *Settings -> Actions -> General -> Enable Actions* o desactivar
-   *Disable scheduled workflows*. Verificar siempre en la pestana *Actions*.
+3. **GitHub Actions** (`.github/workflows/keepalive.yml`): cron cada 5 minutos contra la misma
+   ruta. Estado real de este repositorio: el workflow esta registrado y **funciona** con el
+   trigger `push` (ejecucion `success` confirmada), pero el trigger `schedule` **no dispara**.
+   Eso significa que *Settings -> Actions -> General -> Disable scheduled workflows* esta
+   marcado. Desmarcandolo el cron vuelve a correr.
+   Mientras tanto, el trigger `push` (limitado a cambios en el propio fichero del workflow)
+   permite ejecutar el ping a mano con un commit, y la pestana *Actions -> Run workflow* permite
+   lanzarlo manualmente.
 
 Con cualquiera de las dos primeras la instancia permanece encendida y la respuesta baja a ~0.5 s.
 La opcion definitiva es un plan de pago de Render (sin apagado por inactividad).
