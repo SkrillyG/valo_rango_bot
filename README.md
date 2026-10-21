@@ -1,6 +1,10 @@
 # SkrillyG / valo_rango_bot
 
-Bot de visualizacion de rango en Valorant para twitch.
+API HTTP publica **multi-streamer** que devuelve el rango de Valorant de un jugador en texto plano,
+para usar como comando en **Nightbot** y **StreamElements**.
+
+Cada streamer se configura el mismo (login con Twitch + su propia key del proveedor) y recibe un
+token unico. Las keys se cifran en la base de datos y el token viaja en la URL del comando.
 
 El codigo del servicio vive en **[`valo_rango_bot/`](./valo_rango_bot/)** y es ese directorio el
 que Render usa como **Root Directory**.
@@ -16,29 +20,41 @@ que Render usa como **Root Directory**.
     ├── README.md                     # guia operativa completa
     ├── index.js
     ├── package.json
-    └── package-lock.json
+    ├── package-lock.json
+    ├── src/                          # server, db, crypto, cache, oauth, vistas
+    └── test/smoke.js
 ```
 
 - Servicio: https://valo-rango-bot.onrender.com
 - Render Service ID: `srv-d7n7dbipmmbs73cbtpng`
-- Documentacion del servicio, deploy, comandos de StreamElements y diagnostico:
+- Documentacion del servicio, deploy, comandos de Nightbot/StreamElements y diagnostico:
   [`valo_rango_bot/README.md`](./valo_rango_bot/README.md)
 
 ## Despliegue rapido
 
-1. `HENRIK_API_KEY` en las variables de entorno de Render (obligatoria, ver la guia).
-2. Root Directory = `valo_rango_bot`, Health Check Path = `/health`.
-3. `npm start` como start command.
+1. Root Directory = `valo_rango_bot`, Health Check Path = `/health`, start command = `npm start`.
+2. Variables de entorno en Render (ver `.env.example`):
+   `DATABASE_URL`, `ENCRYPTION_KEY`, `SESSION_SECRET`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`,
+   `BASE_URL`.
+3. App de Twitch en https://dev.twitch.tv/console/apps tipo **Confidential**, con OAuth Redirect URL
+   `https://valo-rango-bot.onrender.com/auth/callback`.
+
+> `HENRIK_API_KEY` ya **no se usa**: cada streamer pega su propia key en `/setup` y se guarda
+> cifrada en la base de datos.
 
 ## Estado
 
-El servicio esta desplegado y funcionando en los dos idiomas:
+El servicio esta desplegado y funcionando:
 
-| Ruta | Idioma | Respuesta |
-|---|---|---|
-| `/rango` | ES | `El rango de Sofi es: Gold 2 (71 RR)` |
-| `/rank` | EN | `Sofi's current rank is: Gold 2 (71 RR)` |
+| Ruta | Que hace |
+|---|---|
+| `/setup` | Configuracion del streamer (login con Twitch, key, Riot ID, region, idioma) |
+| `/rank?token=...` | Rango del streamer dueño del token (texto plano, siempre HTTP 200) |
+| `/rango?token=...` | Igual que `/rank` pero forzando espanol |
+| `/api/rank?token=...` | Mismo dato en JSON |
+| `/health` | Estado del servicio y de la base de datos |
 
-Ambas devuelven texto plano de menos de 400 bytes (limite de StreamElements) y siempre HTTP 200.
-El keep-alive es una mejora de latencia, no un requisito: sin el, el bot sigue respondiendo tras
-el arranque en frio porque el servidor tiene un deadline de 12 s por peticion.
+Las respuestas del rango son de menos de 400 bytes (limite de StreamElements), nunca empiezan por
+`/`, `.` ni `!`, e incluyen el nombre del streamer. El keep-alive es una mejora de latencia, no un
+requisito: sin el, el bot sigue respondiendo tras el arranque en frio porque el servidor tiene un
+deadline por peticion.
